@@ -38,9 +38,9 @@ class TestSmoke(unittest.TestCase):
         end = rospy.Time.now() + rospy.Duration(30)
         while rospy.Time.now() < end and len(seen) < 5:
             for st in rospy.wait_for_message('/diagnostics', DiagnosticArray, timeout=10).status:
-                if st.name.startswith('sangbay: ') and st.values and 'NO' not in st.message:
-                    if any(kv.key == 'gas' for kv in st.values):
-                        seen[st.name[9:]] = st
+                # 'gas' is only there once the sensor has a reading
+                if st.name.startswith('sangbay: ') and any(kv.key == 'gas' for kv in st.values):
+                    seen[st.name[9:]] = st
         self.assertEqual(sorted(seen), ['ch4', 'ch4_laser', 'ch4_remote', 'co', 'h2s'])
         self.assertEqual(seen['h2s'].hardware_id, '/tmp/sangbay_bus#1')
         self.assertEqual(seen['h2s'].level, 0)
