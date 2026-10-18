@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  noetic:
+    runs-on: ubuntu-latest
+    container:
+      image: ros:noetic-ros-base
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/sangbay_driver
+
+      - name: Dependencies
+        run: |
+          source /opt/ros/noetic/setup.bash
+          apt-get update -qq
+          rosdep update --rosdistro noetic --include-eol-distros
+          rosdep install --from-paths src --ignore-src -y --rosdistro noetic
+
+      - name: Build and test
+        run: |
+          source /opt/ros/noetic/setup.bash
+          run() { "$@" > out.txt 2>&1 || { grep -iE 'error|fail|assert' out.txt | tail -15 | sed 's/^/::error::/'; tail -30 out.txt; exit 1; }; cat out.txt; }
+          run catkin_make
+          run catkin_make run_tests
+          run catkin_test_results build/test_results --verbose

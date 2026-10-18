@@ -1,0 +1,8 @@
+<launch>
+  <node pkg="sangbay_driver" type="fake_sensor.py" name="fake_sensor" args="--link /tmp/sangbay_smoke --ppm 12.5"/>
+  <include file="$(find sangbay_driver)/launch/sangbay.launch">
+    <arg name="port" value="/tmp/sangbay_smoke"/>
+    <arg name="address" value="1"/>
+  </include>
+  <test test-name="smoke" pkg="sangbay_driver" type="test_smoke.py" time-limit="60"/>
+</launch>
