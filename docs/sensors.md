@@ -1,21 +1,21 @@
 # Supported sensors and protocols
 
-Summarised from the Sangbay datasheets: S-M4T 485 V1.3.2 (2024-11-09), S-M4T, S-M4, K-5S,
-GT-TS01A, SLTD-CH4-100, and the heads S4-H2S-100, MJC4-2.8J, N-CH4.
+Summarised from the Sangbay datasheets in [datasheets/](datasheets) (S-M4T 485 V1.3.2,
+2024-11-09, and the others linked below).
 
 ## Which `type`
 
 | Product | What it is | `type` |
 |---|---|---|
-| S-M4T 485 | module, RS485 (yellow B, green A), 5 V | `module` |
-| S-M4T | module, TTL UART (green TX, yellow RX), 5–24 V | `module` |
-| S-M4 | module, TTL UART, 5 V | `module` |
-| K-5S | module with temperature compensation, TTL UART, 5 V | `module` |
-| S4-H2S-100 | electrochemical H2S head, 0–100 ppm, nA output | plugs into a module |
-| MJC4-2.8J | catalytic combustible gas head, 0–100 %LEL, bridge output | plugs into a module |
-| N-CH4 | infrared methane head, analog 0.4–2 V (its UART protocol is not documented) | plugs into a module |
-| GT-TS01A | laser (TDLAS) methane sensor, 0–5 %VOL, TTL | `gt_ts01a` |
-| SLTD-CH4-100 | laser methane remote sensor, 100 m, 0–100000 ppm·m, TTL | `sltd_ch4` |
+| [S-M4T 485](datasheets/s-m4t-485_v1.3.2.pdf) | module, RS485 (yellow B, green A), 5 V | `module` |
+| [S-M4T](datasheets/s-m4t.pdf) | module, TTL UART (green TX, yellow RX), 5–24 V | `module` |
+| [S-M4](datasheets/s-m4.pdf) | module, TTL UART, 5 V | `module` |
+| [K-5S](datasheets/k-5s.pdf) | module with temperature compensation, TTL UART, 5 V | `module` |
+| S4-H2S-100 ([1](datasheets/s4-h2s-100.pdf), [2](datasheets/s4-h2s-100_v1.0.pdf)) | electrochemical H2S head, 0–100 ppm, nA output | plugs into a module |
+| [MJC4-2.8J](datasheets/mjc4-2.8j.pdf) | catalytic combustible gas head, 0–100 %LEL, bridge output | plugs into a module |
+| [N-CH4](datasheets/n-ch4.pdf) | infrared methane head, analog 0.4–2 V (its UART protocol is not documented) | plugs into a module |
+| [GT-TS01A](datasheets/gt-ts01a.pdf) | laser (TDLAS) methane sensor, 0–5 %VOL, TTL | `gt_ts01a` |
+| [SLTD-CH4-100](datasheets/sltd-ch4-100.pdf) | laser methane remote sensor, 100 m, 0–100000 ppm·m, TTL | `sltd_ch4` |
 
 TTL modules and the lasers need a USB-TTL (3.3 V) adapter, one per sensor. RS485 modules share
 one USB-RS485 adapter, each with its own address.

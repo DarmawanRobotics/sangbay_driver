@@ -21,7 +21,8 @@ serial port share it (one thread per port), a sensor that stops answering only a
 and unplugged adapters are reopened. The protocol code has no ROS dependency and is also
 usable from `sangbay_tool`. Only standard messages are used.
 
-**Docs:** [supported sensors and protocols](docs/sensors.md) · [first run](docs/first_run.md)
+**Docs:** [supported sensors and protocols](docs/sensors.md) · [first run](docs/first_run.md) ·
+[datasheets](docs/datasheets)
 
 | `type` | Products | Link | Unit |
 |---|---|---|---|
