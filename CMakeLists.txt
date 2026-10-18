@@ -5,7 +5,7 @@ find_package(catkin REQUIRED)
 catkin_python_setup()
 catkin_package()
 
-catkin_install_python(PROGRAMS nodes/sangbay_node scripts/sangbay_read
+catkin_install_python(PROGRAMS scripts/sangbay_node scripts/sangbay_read
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 install(DIRECTORY launch config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
