@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # nose -P
 import threading
 import time
 import unittest
 
-import helpers  # noqa: F401
+import helpers  # noqa: F401,E402
 from fake_devices import FakeGt, FakeModule, FakeModuleBus, FakeSltd, PtyServer
 from sangbay_driver import config
 from sangbay_driver.bus import Bus, Listener, open_serial

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # nose -P
 import unittest
 
-import helpers  # noqa: F401
+import helpers  # noqa: F401,E402
 from sangbay_driver.modbus import (ModbusError, crc16, hexdump, parse_read_response,
                                    parse_write_response, read_request, with_crc, write_request)
 

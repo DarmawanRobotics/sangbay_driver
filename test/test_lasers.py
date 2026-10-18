@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # nose -P
 import unittest
 
 from helpers import MemoryPort
