@@ -1,8 +1,9 @@
 <launch>
-  <node pkg="sangbay_driver" type="fake_sensor.py" name="fake_sensor" args="--link /tmp/sangbay_smoke --ppm 12.5"/>
+  <!-- simulated devices: 3 modules on one bus, GT-TS01A, SLTD-CH4-100 -->
+  <node pkg="sangbay_driver" type="fake_devices.py" name="fake_devices"
+        args="--bus /tmp/sangbay_bus --gt /tmp/sangbay_gt --sltd /tmp/sangbay_sltd"/>
   <include file="$(find sangbay_driver)/launch/sangbay.launch">
-    <arg name="port" value="/tmp/sangbay_smoke"/>
-    <arg name="address" value="1"/>
+    <arg name="config" value="$(find sangbay_driver)/config/example_fake.yaml"/>
   </include>
-  <test test-name="smoke" pkg="sangbay_driver" type="test_smoke.py" time-limit="60"/>
+  <test test-name="smoke" pkg="sangbay_driver" type="smoke_check.py" time-limit="90"/>
 </launch>

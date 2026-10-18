@@ -1,0 +1,8 @@
+# Against test/fake_devices.py --bus /tmp/sangbay_bus --gt /tmp/sangbay_gt --sltd /tmp/sangbay_sltd
+rate: 2.0
+sensors:
+  - {name: h2s, port: /tmp/sangbay_bus, address: 1, expected_gas: H2S}
+  - {name: co,  port: /tmp/sangbay_bus, address: 2, alarm_threshold: 2}
+  - {name: ch4, port: /tmp/sangbay_bus, address: 3}
+  - {name: ch4_laser, type: gt_ts01a, port: /tmp/sangbay_gt}
+  - {name: ch4_remote, type: sltd_ch4, port: /tmp/sangbay_sltd, pointer: false}

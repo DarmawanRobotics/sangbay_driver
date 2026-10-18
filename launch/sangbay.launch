@@ -1,14 +1,12 @@
 <launch>
-  <arg name="port" default="/dev/ttyUSB0"/>
-  <arg name="address" default="255"/>
-  <arg name="ns" default="sangbay"/>
   <arg name="config" default="$(find sangbay_driver)/config/sangbay.yaml"/>
+  <arg name="port" default="/dev/ttyUSB0" doc="for sensors without a port in the config"/>
+  <arg name="ns" default="sangbay"/>
 
   <group ns="$(arg ns)">
     <node pkg="sangbay_driver" type="sangbay_node" name="sangbay_driver" output="screen" respawn="true">
       <rosparam command="load" file="$(arg config)"/>
       <param name="port" value="$(arg port)"/>
-      <param name="address" value="$(arg address)"/>
     </node>
   </group>
 </launch>

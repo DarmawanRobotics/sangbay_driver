@@ -1,153 +1,166 @@
 #!/usr/bin/env python3
-"""ROS node for the Sangbay S-M4T gas sensor.
+"""ROS node for Sangbay gas sensors: any number of S-M4 / S-M4T / K-5S modules (Modbus,
+several per RS485 bus), GT-TS01A and SLTD-CH4-100 laser methane sensors.
 
-Publishes (in the node's namespace):
-  concentration  std_msgs/Float32   ppm
-  status         std_msgs/String    NORMAL, PREHEATING (12.3 s), or the alarms
-  alarm          std_msgs/Bool      any alarm flag
-  /diagnostics   diagnostic_msgs/DiagnosticArray   every detail of the reading
+Per sensor <name>, in the node's namespace:
+  <name>/concentration  std_msgs/Float32  in <name>/unit; not published while preheating
+  <name>/unit           std_msgs/String   ppm, %LEL, %VOL, ppm*m, ... (latched)
+  <name>/status         std_msgs/String   NORMAL, PREHEATING (12.3 s), HIGH, NO DATA: ... (latched)
+  <name>/alarm          std_msgs/Bool     gas alarm (latched)
+  <name>/fault          std_msgs/Bool     sensor fault or no data (latched)
+  <name>/<extra>        std_msgs/Float32  GT-TS01A: temperature, pressure;
+                                          SLTD-CH4-100: light_intensity, laser_temperature
+  /diagnostics          diagnostic_msgs/DiagnosticArray, one status per sensor
 """
+
+import threading
 
 import rospy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from std_msgs.msg import Bool, Float32, String
 
-from sangbay_driver.modbus import ModbusError
-from sangbay_driver.sensor import ALARM_BITS, Sensor, gas_name, open_serial
+from sangbay_driver import config
+from sangbay_driver.bus import Bus, Listener
 
 
-class SangbayNode(object):
+class SensorTopics(object):
+    def __init__(self, sensor):
+        self.sensor = sensor
+        n = sensor.name
+        self.concentration = rospy.Publisher(n + '/concentration', Float32, queue_size=10)
+        self.unit = rospy.Publisher(n + '/unit', String, queue_size=1, latch=True)
+        self.status = rospy.Publisher(n + '/status', String, queue_size=10, latch=True)
+        self.alarm = rospy.Publisher(n + '/alarm', Bool, queue_size=10, latch=True)
+        self.fault = rospy.Publisher(n + '/fault', Bool, queue_size=10, latch=True)
+        self.extra = {}
+        self.last_unit = None
+        self.last_status = None
+        self.last_alarm = None
+        self.last_fault = None
+        self.last_error = None
+        self.reading = None
+        self.reading_time = None
+        self.error = 'waiting for the first reading'
+        self.info = {}
+
+    def publish_state(self, status, alarm, fault):
+        self.status.publish(String(status))
+        if alarm != self.last_alarm or fault != self.last_fault or status != self.last_status:
+            self.alarm.publish(Bool(alarm))
+            self.fault.publish(Bool(fault))
+        self.last_status, self.last_alarm, self.last_fault = status, alarm, fault
+
+
+class SangbayNode(Listener):
     def __init__(self):
-        self.port_name = rospy.get_param('~port', '/dev/ttyUSB0')
-        self.baud = rospy.get_param('~baud', 9600)
-        self.address = rospy.get_param('~address', 255)
-        self.rate = rospy.get_param('~rate', 1.0)
-        self.timeout = rospy.get_param('~timeout', 0.5)
-        self.retries = rospy.get_param('~retries', 2)
-        self.reconnect_sec = rospy.get_param('~reconnect_sec', 2.0)
-        self.max_failures = rospy.get_param('~max_failures', 3)
-        self.frame_id = rospy.get_param('~frame_id', 'gas_sensor')
-        self.expected_gas = rospy.get_param('~expected_gas', 'H2S')
+        default_port = rospy.get_param('~port', '')
+        self.rate = float(rospy.get_param('~rate', 1.0))
         if self.rate <= 0:
-            raise ValueError('rate must be > 0')
-
-        self.conc_pub = rospy.Publisher('concentration', Float32, queue_size=10)
-        self.status_pub = rospy.Publisher('status', String, queue_size=10, latch=True)
-        self.alarm_pub = rospy.Publisher('alarm', Bool, queue_size=10, latch=True)
+            raise config.ConfigError('rate must be > 0')
+        self.buses_config = config.parse(rospy.get_param('~sensors', []), default_port or None)
+        self.lock = threading.Lock()
+        self.topics = {}
+        for b in self.buses_config:
+            for s in b.sensors:
+                self.topics[s.name] = SensorTopics(s)
         self.diag_pub = rospy.Publisher('/diagnostics', DiagnosticArray, queue_size=10)
+        self.buses = [
+            Bus(b, self, rate=self.rate,
+                timeout=float(rospy.get_param('~timeout', 0.3)),
+                retries=int(rospy.get_param('~retries', 2)),
+                reconnect_sec=float(rospy.get_param('~reconnect_sec', 2.0)),
+                max_failures=int(rospy.get_param('~max_failures', 3)))
+            for b in self.buses_config]
+        for b in self.buses_config:
+            rospy.loginfo('%s (%d baud): %s', b.port, b.baud, ', '.join(
+                '%s %s' % (s.name, ('#%d' % s.address) if s.type == 'module' else s.type)
+                for s in b.sensors))
 
-        self.serial = None
-        self.sensor = None
-        self.failures = 0
-        self.last_error = ''
-        self.next_open = rospy.Time(0)
+    # -- Listener (bus threads) ----------------------------------------------
 
-    # -- connection --------------------------------------------------------
+    def on_log(self, error, text):
+        (rospy.logwarn if error else rospy.loginfo)(text)
 
-    def close(self):
-        if self.serial is not None:
-            try:
-                self.serial.close()
-            except Exception:
-                pass
-        self.serial = None
-        self.sensor = None
-        self.next_open = rospy.Time.now() + rospy.Duration(self.reconnect_sec)
+    def on_info(self, sensor, info):
+        t = self.topics[sensor.name]
+        t.info = info
+        if sensor.type == 'module':
+            rospy.loginfo('%s: %s (%s), %s, %s decimal places, address %d', sensor.name, info['gas'],
+                          info['gas_description'], info['unit'], info['decimals'], sensor.address)
 
-    def connect(self):
-        try:
-            self.serial = open_serial(self.port_name, self.baud, self.timeout)
-            self.sensor = Sensor(self.serial, self.address, self.retries)
-            code, decimals = self.sensor.read_info()
-        except Exception as e:  # serial.SerialException, OSError, ModbusError
-            self.fail('connect to %s: %s' % (self.port_name, e))
-            self.close()
-            return False
-        gas = gas_name(code)
-        rospy.loginfo('%s: %s, %d decimal places, address %d',
-                      self.port_name, gas, decimals, self.address)
-        if self.expected_gas and gas != self.expected_gas:
-            rospy.logwarn('sensor reports %s, expected %s', gas, self.expected_gas)
-        self.failures = 0
-        return True
+    def on_reading(self, sensor, r):
+        t = self.topics[sensor.name]
+        with self.lock:
+            if t.last_error:
+                rospy.loginfo('%s: readings back', sensor.name)
+            t.reading, t.reading_time, t.error, t.last_error = r, rospy.Time.now(), None, None
+        if r.unit != t.last_unit:
+            t.unit.publish(String(r.unit))
+            t.last_unit = r.unit
+        if r.valid:
+            t.concentration.publish(Float32(r.concentration))
+            for key, value in r.extra.items():
+                if key not in t.extra:
+                    t.extra[key] = rospy.Publisher(sensor.name + '/' + key, Float32, queue_size=10)
+                t.extra[key].publish(Float32(value))
+        t.publish_state(r.status, r.alarm, r.fault)
 
-    def fail(self, text):
-        self.failures += 1
-        if text != self.last_error:
-            rospy.logwarn(text)
-        self.last_error = text
-        self.publish_diag(DiagnosticStatus.ERROR, text, [])
+    def on_error(self, sensor, message):
+        t = self.topics[sensor.name]
+        with self.lock:
+            new = message != t.last_error
+            t.error, t.last_error = message, message
+        if new:
+            rospy.logwarn('%s: %s', sensor.name, message)
+        # Keep the last alarm state; a sensor that does not answer is a fault.
+        t.publish_state('NO DATA: ' + message, bool(t.last_alarm), True)
 
-    # -- loop --------------------------------------------------------------
+    # -- diagnostics ---------------------------------------------------------
 
-    def step(self):
-        if self.sensor is None:
-            if rospy.Time.now() < self.next_open or not self.connect():
-                return
-        try:
-            r = self.sensor.read()
-        except ModbusError as e:
-            self.fail('read: %s' % e)
-            if self.failures >= self.max_failures:
-                rospy.logwarn('%d failed readings, reopening %s', self.failures, self.port_name)
-                self.close()
-            return
-        except Exception as e:  # unplugged adapter
-            self.fail('serial: %s' % e)
-            self.close()
-            return
-
-        if self.last_error:
-            rospy.loginfo('readings back')
-            self.last_error = ''
-        self.failures = 0
-        self.conc_pub.publish(Float32(r.concentration))
-        self.status_pub.publish(String(r.status.text))
-        self.alarm_pub.publish(Bool(r.status.alarm))
-
-        if r.status.flags['sensor_error']:
-            level = DiagnosticStatus.ERROR
-        elif r.status.alarm or r.status.preheating:
-            level = DiagnosticStatus.WARN
-        else:
-            level = DiagnosticStatus.OK
-        values = [
-            ('gas', r.gas), ('concentration_ppm', '%g' % r.concentration),
-            ('raw', str(r.raw)), ('decimals', str(r.decimals)),
-            ('status_word', '0x%04X' % r.status.word),
-            ('preheat_remaining', '%.1f' % r.status.preheat_remaining),
-        ] + [(key, str(r.status.flags[key])) for _, key, _ in ALARM_BITS]
-        self.publish_diag(level, '%s %g ppm, %s' % (r.gas, r.concentration, r.status.text), values)
-
-    def publish_diag(self, level, message, values):
-        status = DiagnosticStatus(level=level, name='sangbay: %s' % rospy.get_name(),
-                                  message=message, hardware_id=self.frame_id)
-        status.values = [KeyValue(k, v) for k, v in values]
-        status.values.append(KeyValue('port', self.port_name))
+    def publish_diagnostics(self, _event=None):
         array = DiagnosticArray()
         array.header.stamp = rospy.Time.now()
-        array.status = [status]
+        for name, t in self.topics.items():
+            with self.lock:
+                r, error = t.reading, t.error
+            st = DiagnosticStatus(name='sangbay: %s' % name, hardware_id=t.sensor.hardware_id)
+            st.values = [KeyValue('type', t.sensor.type), KeyValue('port', t.sensor.port)]
+            if error or r is None:
+                st.level = DiagnosticStatus.ERROR
+                st.message = error or 'no reading'
+            else:
+                if r.fault:
+                    st.level = DiagnosticStatus.ERROR
+                elif r.alarm or not r.valid:
+                    st.level = DiagnosticStatus.WARN
+                else:
+                    st.level = DiagnosticStatus.OK
+                st.message = '%s %g %s, %s' % (r.gas, r.concentration, r.unit, r.status)
+                st.values += [KeyValue(k, v) for k, v in r.values]
+                st.values.append(KeyValue('age', '%.1f s' % (rospy.Time.now() - t.reading_time).to_sec()))
+            array.status.append(st)
         self.diag_pub.publish(array)
 
-    def spin(self):
-        rate = rospy.Rate(self.rate)
-        while not rospy.is_shutdown():
-            self.step()
-            try:
-                rate.sleep()
-            except rospy.ROSInterruptException:
-                break
-        self.close()
+    # -- run -----------------------------------------------------------------
+
+    def run(self):
+        for b in self.buses:
+            b.start()
+        timer = rospy.Timer(rospy.Duration(1.0), self.publish_diagnostics)
+        rospy.spin()
+        timer.shutdown()
+        for b in self.buses:
+            b.stop()
 
 
 def main():
     rospy.init_node('sangbay_driver')
     try:
         node = SangbayNode()
-    except ValueError as e:
-        rospy.logfatal(str(e))
+    except config.ConfigError as e:
+        rospy.logfatal('configuration: %s', e)
         return
-    node.spin()
+    node.run()
 
 
 if __name__ == '__main__':
