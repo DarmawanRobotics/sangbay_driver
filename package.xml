@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sangbay_driver</name>
+  <version>0.1.0</version>
+  <description>ROS Noetic driver for the Sangbay S-M4T gas sensor (H2S and others) over RS485 Modbus RTU.</description>
+  <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
+  <license>Apache-2.0</license>
+  <url type="repository">https://github.com/DarmawanRobotics/sangbay_driver</url>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>python3-setuptools</buildtool_depend>
+
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+
+  <test_depend>rostest</test_depend>
+  <test_depend>python3-nose</test_depend>
+</package>

@@ -1,0 +1,11 @@
+# sangbay_node parameters
+port: /dev/ttyUSB0      # USB-RS485 adapter (ls /dev/serial/by-id/ for a fixed name)
+baud: 9600              # 8N1
+address: 255            # Modbus address, 255 = factory default (answers on any address)
+rate: 1.0               # Hz, readings per second
+timeout: 0.5            # s, per answer
+retries: 2              # extra tries per register before a reading counts as failed
+reconnect_sec: 2.0      # wait before reopening the port after errors
+max_failures: 3         # failed readings in a row before the port is reopened
+frame_id: gas_sensor
+expected_gas: H2S       # warn if the sensor reports another gas; empty: no check
