@@ -5,12 +5,12 @@ find_package(catkin REQUIRED)
 catkin_python_setup()
 catkin_package()
 
-catkin_install_python(PROGRAMS scripts/sangbay_node scripts/sangbay_read
+catkin_install_python(PROGRAMS scripts/sangbay_node scripts/sangbay_tool test/fake_devices.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 install(DIRECTORY launch config DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 if(CATKIN_ENABLE_TESTING)
   find_package(rostest REQUIRED)
-  catkin_add_nosetests(test/test_core.py)
+  catkin_add_nosetests(test)
   add_rostest(test/smoke.test)
 endif()

@@ -1,0 +1,31 @@
+# Several sensors. Every entry becomes topics under <ns>/<name>/.
+#
+# type     module (default)  S-M4, S-M4T (TTL or 485), K-5S, Modbus 9600 8N1. Several share an
+#                            RS485 bus with their own address 0..254 (sangbay_tool set-address).
+#                            A TTL module is alone on its UART.
+#          gt_ts01a          GT-TS01A laser methane, %VOL, 115200, one per port
+#          sltd_ch4          SLTD-CH4-100 laser methane remote sensor, ppm*m, 115200, one per port
+# port, baud               baud defaults to the type's
+# address                  module only, 0..255 (255 = factory default, only if alone on the port)
+# expected_gas             module only, e.g. H2S, CO, O2, EX, CH4: warn on a different module
+# alarm_threshold          optional, also raise <name>/alarm at or above this value
+# mode, pointer            sltd_ch4 only: dynamic / static measurement, green indicator laser
+# check_crc                sltd_ch4 only, default true
+
+rate: 1.0
+timeout: 0.3
+retries: 2
+reconnect_sec: 2.0
+max_failures: 3
+
+sensors:
+  # RS485 bus with three modules
+  - {name: h2s, port: /dev/ttyUSB0, address: 1, expected_gas: H2S, alarm_threshold: 10}
+  - {name: co,  port: /dev/ttyUSB0, address: 2, expected_gas: CO}
+  - {name: o2,  port: /dev/ttyUSB0, address: 3, expected_gas: O2}
+  # combustible gas module (MJC4-2.8J catalytic head) on its own TTL adapter
+  - {name: ex,  port: /dev/ttyUSB1, expected_gas: EX}
+  # laser methane
+  - {name: ch4_laser, type: gt_ts01a, port: /dev/ttyUSB2, alarm_threshold: 1.0}
+  - {name: ch4_remote, type: sltd_ch4, port: /dev/ttyUSB3, mode: dynamic, pointer: true,
+     alarm_threshold: 1000}

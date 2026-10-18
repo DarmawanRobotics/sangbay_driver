@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>sangbay_driver</name>
-  <version>0.1.0</version>
-  <description>ROS Noetic driver for the Sangbay S-M4T gas sensor (H2S and others) over RS485 Modbus RTU.</description>
+  <version>0.2.0</version>
+  <description>ROS Noetic driver for Sangbay gas sensors: S-M4, S-M4T and K-5S Modbus modules (several per RS485 bus), GT-TS01A and SLTD-CH4-100 laser methane sensors.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
   <url type="repository">https://github.com/DarmawanRobotics/sangbay_driver</url>

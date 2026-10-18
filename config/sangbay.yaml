@@ -1,11 +1,14 @@
-# sangbay_node parameters
-port: /dev/ttyUSB0      # USB-RS485 adapter (ls /dev/serial/by-id/ for a fixed name)
-baud: 9600              # 8N1
-address: 255            # Modbus address, 255 = factory default (answers on any address)
-rate: 1.0               # Hz, readings per second
-timeout: 0.5            # s, per answer
-retries: 2              # extra tries per register before a reading counts as failed
-reconnect_sec: 2.0      # wait before reopening the port after errors
-max_failures: 3         # failed readings in a row before the port is reopened
-frame_id: gas_sensor
-expected_gas: H2S       # warn if the sensor reports another gas; empty: no check
+# sangbay_node: one module at the factory address on `port` (the launch argument).
+# For several sensors see example_multi.yaml.
+
+rate: 1.0            # Hz, module polling (lasers publish every frame they send)
+timeout: 0.3         # s, per Modbus answer
+retries: 2           # extra tries per register
+reconnect_sec: 2.0   # wait before reopening a port
+max_failures: 3      # failed readings in a row before a module's info is read again /
+                     # the port is reopened (no module answers, no laser data)
+
+sensors:
+  - name: h2s
+    address: 255         # factory default
+    expected_gas: H2S    # warn if the module reports another gas

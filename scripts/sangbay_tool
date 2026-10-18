@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Sangbay sensors without ROS: find modules, read them, give them their own address.
+
+  sangbay_tool scan --port /dev/ttyUSB0                 modules on the bus (addresses 0..255)
+  sangbay_tool info --port /dev/ttyUSB0 --address 1     gas, unit, decimals, range
+  sangbay_tool read --port /dev/ttyUSB0 --address 1 -v  live values, -v prints the frames
+  sangbay_tool read --type gt_ts01a --port /dev/ttyUSB1
+  sangbay_tool read --type sltd_ch4 --port /dev/ttyUSB2
+  sangbay_tool set-address --port /dev/ttyUSB0 --address 255 --new 1
+"""
+
+import argparse
+import sys
+import time
+
+from sangbay_driver import gt_ts01a, sltd
+from sangbay_driver.bus import open_serial
+from sangbay_driver.modbus import ModbusError, hexdump
+from sangbay_driver.module import Module
+
+
+class Logged(object):
+    """Prints every frame."""
+
+    def __init__(self, port):
+        self.port = port
+
+    def __getattr__(self, name):
+        return getattr(self.port, name)
+
+    def write(self, data):
+        print('[TX] %s' % hexdump(data))
+        return self.port.write(data)
+
+    def read(self, n):
+        data = self.port.read(n)
+        print('[RX] %s' % (hexdump(data) or '<no answer>'))
+        return data
+
+
+def address(text):
+    value = int(text, 0)
+    if not 0 <= value <= 255:
+        raise argparse.ArgumentTypeError('0..255')
+    return value
+
+
+def open_port(args, baud):
+    port = open_serial(args.port, args.baud or baud, args.timeout)
+    return port, (Logged(port) if getattr(args, 'verbose', False) else port)
+
+
+def print_info(m):
+    i = m.read_info()
+    print('address %d: %s (%s), unit %s, %d decimal places, range register %s'
+          % (m.address, i['gas'], i['gas_description'], i['unit'], i['decimals'], i['range_raw']))
+
+
+def cmd_scan(args):
+    raw, port = open_port(args, 9600)
+    found = []
+    with raw:
+        for a in range(args.first, args.last + 1):
+            sys.stdout.write('\r%3d ' % a)
+            sys.stdout.flush()
+            m = Module(port, a, retries=0, inter_frame=0.02)
+            try:
+                m.read_registers(0x2027)
+            except ModbusError:
+                continue
+            sys.stdout.write('\r')
+            found.append(a)
+            try:
+                print_info(m)
+            except ModbusError as e:
+                print('address %d: answers, info failed: %s' % (a, e))
+    print('\r%d module(s): %s' % (len(found), ', '.join(map(str, found)) or 'none'))
+    if 255 in found and len(found) > 1:
+        print('note: 255 is the factory default (it may answer for any module)')
+
+
+def cmd_info(args):
+    raw, port = open_port(args, 9600)
+    with raw:
+        m = Module(port, args.address)
+        print_info(m)
+        word, text = m.operating_status()
+        print('operating status 0x%04X (%s)' % (word, text))
+
+
+def show(reading):
+    stamp = time.strftime('%H:%M:%S')
+    extra = '  '.join('%s %g' % kv for kv in sorted(reading.extra.items()))
+    print('%s  %10g %-6s %s  %s' % (stamp, reading.concentration, reading.unit, reading.status, extra))
+
+
+def cmd_read(args):
+    if args.type == 'module':
+        raw, port = open_port(args, 9600)
+        with raw:
+            m = Module(port, args.address)
+            print_info(m)
+            try:
+                while True:
+                    try:
+                        show(m.read())
+                    except ModbusError as e:
+                        print('%s  -- %s' % (time.strftime('%H:%M:%S'), e))
+                    time.sleep(args.interval)
+            except KeyboardInterrupt:
+                pass
+        return
+    args.timeout = 0.1
+    raw, port = open_port(args, 115200)
+    with raw:
+        dev = gt_ts01a.GtTs01a(port) if args.type == 'gt_ts01a' else sltd.Sltd(port, pointer=not args.no_pointer)
+        dev.start()
+        last = 0
+        try:
+            while True:
+                r = dev.read(5.0)
+                if r is None:
+                    print('-- no data%s' % (' (%s)' % dev.last_error if dev.last_error else ''))
+                    dev.start()
+                elif time.time() - last >= args.interval:
+                    show(r)
+                    last = time.time()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if args.type == 'sltd_ch4':
+                dev.stop()
+
+
+def cmd_set_address(args):
+    if not 0 <= args.new <= 254:
+        sys.exit('--new must be 0..254')
+    raw, port = open_port(args, 9600)
+    with raw:
+        m = Module(port, args.address)
+        print_info(m)
+        if not args.yes:
+            print('Only the module to change may answer on address %d (connect it alone).' % args.address)
+            if input('Set address %d -> %d? [y/N] ' % (args.address, args.new)).strip().lower() != 'y':
+                return
+        m.set_address(args.new)
+        time.sleep(0.2)
+        print('done; now answering:')
+        print_info(Module(port, args.new))
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest='command')
+    sub.required = True
+
+    def common(sp, with_address=True):
+        sp.add_argument('--port', default='/dev/ttyUSB0')
+        sp.add_argument('--baud', type=int, default=0, help='default: 9600 modules, 115200 lasers')
+        sp.add_argument('--timeout', type=float, default=0.3)
+        if with_address:
+            sp.add_argument('--address', type=address, default=255)
+        sp.add_argument('--verbose', '-v', action='store_true', help='print the frames')
+
+    sp = sub.add_parser('scan', help='find modules on a bus')
+    common(sp, False)
+    sp.add_argument('--first', type=address, default=0)
+    sp.add_argument('--last', type=address, default=255)
+    sp.set_defaults(func=cmd_scan, timeout=0.1)
+
+    sp = sub.add_parser('info', help='module information')
+    common(sp)
+    sp.set_defaults(func=cmd_info)
+
+    sp = sub.add_parser('read', help='live values')
+    common(sp)
+    sp.add_argument('--type', choices=['module', 'gt_ts01a', 'sltd_ch4'], default='module')
+    sp.add_argument('--interval', type=float, default=1.0)
+    sp.add_argument('--no-pointer', action='store_true', help='SLTD: green laser off')
+    sp.set_defaults(func=cmd_read)
+
+    sp = sub.add_parser('set-address', help='give a module its own address (0..254)')
+    common(sp)
+    sp.add_argument('--new', type=address, required=True)
+    sp.add_argument('--yes', '-y', action='store_true')
+    sp.set_defaults(func=cmd_set_address)
+
+    args = p.parse_args()
+    try:
+        args.func(args)
+    except ModbusError as e:
+        sys.exit('error: %s' % e)
+
+
+if __name__ == '__main__':
+    main()
